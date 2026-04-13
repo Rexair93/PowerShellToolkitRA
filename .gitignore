@@ -1,0 +1,13 @@
+# Editor
+.vscode/
+
+# Temporary / logs
+*.log
+*.tmp
+
+# PowerShell user state
+*.ps1xml.user
+
+# OS
+Thumbs.db
+.DS_Store
