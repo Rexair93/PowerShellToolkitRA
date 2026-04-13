@@ -12,7 +12,10 @@ function Assert-Module {
         [string] $Scope = 'CurrentUser',
 
         [Parameter()]
-        [switch] $AutoInstall
+        [switch] $AutoInstall,
+
+        [Parameter()]
+        [switch] $AllowClobber
     )
 
     # Trova la versione più recente installata
@@ -49,15 +52,19 @@ function Assert-Module {
         $installParams.MinimumVersion = $MinimumVersion
     }
 
+    if ($AllowClobber) {
+            $installParams.AllowClobber = $true
+        }
+
     if ($AutoInstall) {
         Install-Module @installParams
         return
     }
 
     $question = if ($MinimumVersion) {
-        "Installare il modulo '$Name' (>= $MinimumVersion)?"
+        "Installare il modulo '$Name' (AllowClobber=$AllowClobber) (>= $MinimumVersion)?"
     } else {
-        "Installare il modulo '$Name'?"
+        "Installare il modulo '$Name' (AllowClobber=$AllowClobber)?"
     }
 
     if ($PSCmdlet.ShouldContinue($question, "Modulo mancante")) {

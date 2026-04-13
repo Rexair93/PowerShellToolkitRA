@@ -19,6 +19,10 @@ function Connect-ToGraph {
 
     Assert-Module -Name "Microsoft.Graph.Authentication" -Scope CurrentUser -AutoInstall:$AutoInstallModules
 
+    if (-not (Get-Module -Name Microsoft.Graph.Authentication)) {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+    }
+
     # Se già connesso e non vuoi riconnettere, esci
     
     $ctx = $null

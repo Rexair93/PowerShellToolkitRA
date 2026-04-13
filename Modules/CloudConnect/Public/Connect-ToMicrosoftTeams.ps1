@@ -16,6 +16,10 @@ function Connect-ToMicrosoftTeams {
 
     Assert-Module -Name "MicrosoftTeams" -Scope CurrentUser -AutoInstall:$AutoInstallModules
 
+    if (-not (Get-Module -Name MicrosoftTeams)) {
+        Import-Module MicrosoftTeams -ErrorAction Stop
+    }
+
     # In alcune versioni del modulo Teams c'è già una sessione implicita.
     # Se non vuoi riconnettere, prova un comando leggero.
     if (-not $ForceReconnect) {
