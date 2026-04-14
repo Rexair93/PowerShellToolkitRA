@@ -11,13 +11,45 @@ function Connect-ToMicrosoftTeams {
         [switch] $ForceReconnect,
 
         [Parameter()]
-        [switch] $AutoInstallModules
+        [switch] $AutoInstallModules,
+
+        [Parameter()]
+        [ValidateSet('Required','All')]
+        [string] $ImportMode = 'Required'
     )
 
     Assert-Module -Name "MicrosoftTeams" -Scope CurrentUser -AutoInstall:$AutoInstallModules
 
-    if (-not (Get-Module -Name MicrosoftTeams)) {
-        Import-Module MicrosoftTeams -ErrorAction Stop
+    $requiredCmdlets = @(
+        'Connect-MicrosoftTeams',
+        'Disconnect-MicrosoftTeams',
+        'Get-CsTenant',
+        'Get-CsTenantFederationConfiguration'
+    )
+
+    if ($ImportMode -eq 'All') {
+        if (-not (Get-Module -Name MicrosoftTeams)) {
+            Write-Verbose "Import completo del modulo MicrosoftTeams..."
+            Import-Module MicrosoftTeams `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
+        }
+    }
+    else {
+        $missingCmdlets = $requiredCmdlets | Where-Object {
+            -not (Get-Command -Name $_ -ErrorAction SilentlyContinue)
+        }
+
+     if ($missingCmdlets) {
+        Write-Verbose "Import selettivo del modulo MicrosoftTeams: $($missingCmdlets -join ', ')"
+
+        Import-Module MicrosoftTeams `
+            -Cmdlet $requiredCmdlets `
+            -DisableNameChecking `
+            -ErrorAction Stop `
+            -Verbose:$false 4>$null
+        }
     }
 
     # In alcune versioni del modulo Teams c'è già una sessione implicita.

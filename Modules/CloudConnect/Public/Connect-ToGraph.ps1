@@ -14,21 +14,52 @@ function Connect-ToGraph {
         [switch] $ForceReconnect,
 
         [Parameter()]
-        [switch] $AutoInstallModules
+        [switch] $AutoInstallModules,
+
+        [Parameter()]
+        [ValidateSet('Required','All')]
+        [string] $ImportMode = 'Required'
     )
 
     Assert-Module -Name "Microsoft.Graph.Authentication" -Scope CurrentUser -AutoInstall:$AutoInstallModules
 
-    if (-not (Get-Module -Name Microsoft.Graph.Authentication)) {
-        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-    }
+    $requiredCmdlets = @(
+        'Connect-MgGraph',
+        'Disconnect-MgGraph',
+        'Get-MgContext'
+    )
 
+    if ($ImportMode -eq 'All') {
+        if (-not (Get-Module -Name Microsoft.Graph.Authentication)) {
+            Write-Verbose "Import completo del modulo Microsoft.Graph.Authentication..."
+            Import-Module Microsoft.Graph.Authentication `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
+        }
+    }
+    else {
+        $missingCmdlets = $requiredCmdlets | Where-Object {
+            -not (Get-Command -Name $_ -ErrorAction SilentlyContinue)
+        }
+
+    if ($missingCmdlets) {
+            Write-Verbose "Import selettivo del modulo Microsoft.Graph.Authentication: $($requiredCmdlets -join ', ')"
+            Import-Module Microsoft.Graph.Authentication `
+                -Cmdlet $requiredCmdlets `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
+        }
+    }
     # Se già connesso e non vuoi riconnettere, esci
     
     $ctx = $null
     try {
         $ctx = Get-MgContext -ErrorAction Stop
-    } catch {}
+    } catch {
+        $ctx = $null
+    }
 
     if ($ctx -and -not $ForceReconnect) {
         $missingScopes = $Scopes | Where-Object { $_ -notin $ctx.Scopes }

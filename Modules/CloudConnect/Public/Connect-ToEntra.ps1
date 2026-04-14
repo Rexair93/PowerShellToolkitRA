@@ -14,13 +14,43 @@ function Connect-ToEntra {
         [switch] $AutoInstallModules,
 
         [Parameter()]
-        [switch] $AllowClobber
+        [switch] $AllowClobber,
+
+        [Parameter()]
+        [ValidateSet('Required','All')]
+        [string] $ImportMode = 'Required'
     )
 
     Assert-Module -Name "Microsoft.Entra" -Scope CurrentUser -AutoInstall:$AutoInstallModules -AllowClobber:$AllowClobber
 
-    if (-not (Get-Module -Name Microsoft.Entra)) {
-        Import-Module Microsoft.Entra -ErrorAction Stop
+    $requiredCmdlets = @(
+        'Connect-Entra',
+        'Disconnect-Entra',
+        'Get-EntraOrganization'
+    )
+
+    if ($ImportMode -eq 'All') {
+        if (-not (Get-Module -Name Microsoft.Entra)) {
+            Write-Verbose "Import completo del modulo Microsoft.Entra..."
+            Import-Module Microsoft.Entra `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
+        }
+    }
+    else {
+        $missingCmdlets = $requiredCmdlets | Where-Object {
+            -not (Get-Command -Name $_ -ErrorAction SilentlyContinue)
+        }
+
+        if ($missingCmdlets) {
+            Write-Verbose "Import selettivo del modulo Microsoft.Entra: $($requiredCmdlets -join ', ')"
+            Import-Module Microsoft.Entra `
+                -Cmdlet $requiredCmdlets `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
+        }
     }
 
     # -----------------------------------------------------------------
