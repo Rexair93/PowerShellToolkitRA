@@ -24,13 +24,9 @@ function New-FileDialogFilter {
     # - rimuove il punto iniziale
     # - converte in lowercase
     # - elimina duplicati e valori vuoti
-    $normalized = $Extensions |
-        Where-Object { $_ } |
-        ForEach-Object { $_.TrimStart('.').ToLowerInvariant() } |
-        Sort-Object -Unique
+    $normalized = $Extensions | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().TrimStart('.').ToLowerInvariant() } | Sort-Object -Unique
 
-    
-    $parts = foreach ($ext in $normalized) {
+    [string[]]$parts = foreach ($ext in $normalized) {
         $label = if ($friendly.ContainsKey($ext)) {
             $friendly[$ext]
         }
@@ -46,4 +42,5 @@ function New-FileDialogFilter {
     }
 
     $parts -join "|"
+    Write-Verbose "Generated file dialog filter: $($parts -join '|')"
 }
