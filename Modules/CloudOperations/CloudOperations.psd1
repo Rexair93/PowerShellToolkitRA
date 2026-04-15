@@ -1,6 +1,6 @@
 @{
     RootModule           = 'CloudOperations.psm1'
-    ModuleVersion        = '1.0.0'
+    ModuleVersion        = '1.0.1'
     GUID                 = 'ccdb5b64-b6ca-4bc7-ba19-16e1422d7bab' # sostituisci con :NewGuid()
     Author               = 'Renato'
     RequiredModules      = @(
