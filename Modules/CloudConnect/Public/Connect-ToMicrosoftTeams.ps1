@@ -14,7 +14,7 @@ function Connect-ToMicrosoftTeams {
         [switch] $AutoInstallModules,
 
         [Parameter()]
-        [ValidateSet('Required','All')]
+        [ValidateSet('Required', 'All')]
         [string] $ImportMode = 'Required'
     )
 
@@ -41,14 +41,14 @@ function Connect-ToMicrosoftTeams {
             -not (Get-Command -Name $_ -ErrorAction SilentlyContinue)
         }
 
-     if ($missingCmdlets) {
-        Write-Verbose "Import selettivo del modulo MicrosoftTeams: $($missingCmdlets -join ', ')"
+        if ($missingCmdlets) {
+            Write-Verbose "Import selettivo del modulo MicrosoftTeams: $($missingCmdlets -join ', ')"
 
-        Import-Module MicrosoftTeams `
-            -Cmdlet $requiredCmdlets `
-            -DisableNameChecking `
-            -ErrorAction Stop `
-            -Verbose:$false 4>$null
+            Import-Module MicrosoftTeams `
+                -Cmdlet $requiredCmdlets `
+                -DisableNameChecking `
+                -ErrorAction Stop `
+                -Verbose:$false 4>$null
         }
     }
 
@@ -60,9 +60,10 @@ function Connect-ToMicrosoftTeams {
             Get-CsTenant -ErrorAction Stop | Out-Null
             Write-Verbose "Sessione Microsoft Teams già attiva."
             return
-        } catch {
+        }
+        catch {
             Write-Verbose "Nessuna sessione valida trovata."
-         }
+        }
     }
 
     

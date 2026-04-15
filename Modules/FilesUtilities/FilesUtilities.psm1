@@ -18,7 +18,7 @@ if (Test-Path $publicPath) {
 $publicFunctions = @()
 if (Test-Path $publicPath) {
     $publicFunctions = Get-ChildItem -Path $publicPath -Filter '*.ps1' -File |
-        Select-Object -ExpandProperty BaseName
+    Select-Object -ExpandProperty BaseName
 }
 
 Export-ModuleMember -Function $publicFunctions

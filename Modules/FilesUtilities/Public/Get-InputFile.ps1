@@ -1,16 +1,16 @@
 function Get-InputFile {
- [CmdletBinding()]
+    [CmdletBinding()]
     param(
-        [string[]] $Formats      = @("csv"),
-        [string]   $Title        = "Seleziona file di input",
+        [string[]] $Formats = @("csv"),
+        [string]   $Title = "Seleziona file di input",
         [string]   $InitialDirectory = (Get-Location).Path,
         [switch]   $UseConsole
     )
 
     $Formats = $Formats |
-        ConvertTo-NormalizedExt |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Sort-Object -Unique
+    ConvertTo-NormalizedExt |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Sort-Object -Unique
 
     if (-not $Formats) {
         throw "Specificare almeno un formato valido."
@@ -19,12 +19,12 @@ function Get-InputFile {
     if (-not $UseConsole -and (Test-GuiAvailability)) {
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
         $dlg = [System.Windows.Forms.OpenFileDialog]::new()
-        $dlg.Title            = $Title
+        $dlg.Title = $Title
         $dlg.InitialDirectory = $InitialDirectory
-        $dlg.Filter           = New-FileDialogFilter -Extensions $Formats -IncludeAllFiles
-        $dlg.Multiselect      = $false
-        $dlg.CheckFileExists  = $true
-        $dlg.CheckPathExists  = $true
+        $dlg.Filter = New-FileDialogFilter -Extensions $Formats -IncludeAllFiles
+        $dlg.Multiselect = $false
+        $dlg.CheckFileExists = $true
+        $dlg.CheckPathExists = $true
         if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.FileName }
         throw "Operazione annullata."
     }

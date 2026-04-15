@@ -17,7 +17,7 @@ function Connect-ToGraph {
         [switch] $AutoInstallModules,
 
         [Parameter()]
-        [ValidateSet('Required','All')]
+        [ValidateSet('Required', 'All')]
         [string] $ImportMode = 'Required'
     )
 
@@ -43,7 +43,7 @@ function Connect-ToGraph {
             -not (Get-Command -Name $_ -ErrorAction SilentlyContinue)
         }
 
-    if ($missingCmdlets) {
+        if ($missingCmdlets) {
             Write-Verbose "Import selettivo del modulo Microsoft.Graph.Authentication: $($requiredCmdlets -join ', ')"
             Import-Module Microsoft.Graph.Authentication `
                 -Cmdlet $requiredCmdlets `
@@ -57,7 +57,8 @@ function Connect-ToGraph {
     $ctx = $null
     try {
         $ctx = Get-MgContext -ErrorAction Stop
-    } catch {
+    }
+    catch {
         $ctx = $null
     }
 
@@ -80,7 +81,7 @@ function Connect-ToGraph {
         Scopes    = $Scopes
         NoWelcome = $true
     }
-    if ($TenantId)      { $connectParams.TenantId = $TenantId }
+    if ($TenantId) { $connectParams.TenantId = $TenantId }
     if ($UseDeviceCode) { $connectParams.UseDeviceCode = $true }
 
     if ($PSCmdlet.ShouldProcess("Microsoft Graph", "Connect")) {

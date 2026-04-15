@@ -30,10 +30,10 @@ function Resolve-SrvRecordSafe {
         Resolve-DnsName @params
     }
     catch {
-        $err      = $_
-        $msg      = $err.Exception.Message
+        $err = $_
+        $msg = $err.Exception.Message
         $innerMsg = $err.Exception.InnerException?.Message
-        $fqid     = $err.FullyQualifiedErrorId
+        $fqid = $err.FullyQualifiedErrorId
         $typeName = $err.Exception.GetType().FullName
 
         Write-Verbose ("DNS error type: {0} | FQID: {1} | Message: {2}" -f $typeName, $fqid, $msg)

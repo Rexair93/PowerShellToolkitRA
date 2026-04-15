@@ -2,6 +2,9 @@ function Connect-ToEntra {
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter()]
+        [string[]] $Scopes,
+
+        [Parameter()]
         [string] $TenantId,
 
         [Parameter()]
@@ -17,7 +20,7 @@ function Connect-ToEntra {
         [switch] $AllowClobber,
 
         [Parameter()]
-        [ValidateSet('Required','All')]
+        [ValidateSet('Required', 'All')]
         [string] $ImportMode = 'Required'
     )
 
@@ -80,6 +83,11 @@ function Connect-ToEntra {
 
     if ($TenantId) {
         $connectParams.TenantId = $TenantId
+    }
+
+    if ($Scopes -and $Scopes.Count -gt 0) {
+        Write-Verbose "Scopes specificati: $($Scopes -join ', ')"
+        $connectParams.Scopes = $Scopes
     }
 
     if ($UseDeviceCode) {

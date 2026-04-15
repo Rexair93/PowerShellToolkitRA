@@ -4,7 +4,7 @@ function Get-ExportDestination {
         [string] $DefaultFileName = "report.xlsx",
         [string] $InitialDirectory = (Get-Location).Path,
         [ValidateNotNullOrEmpty()]
-        [string[]] $Formats = @("xlsx","csv"),
+        [string[]] $Formats = @("xlsx", "csv"),
         [string] $PreferredFormat,
         [string] $Title = "Scegli dove salvare il report",
         [switch] $UseConsole,
@@ -14,9 +14,9 @@ function Get-ExportDestination {
 
     # --- Normalizzazione formati ---
     $Formats = $Formats |
-        ConvertTo-NormalizedExt |
-        Where-Object { $_ } |
-        Sort-Object -Unique
+    ConvertTo-NormalizedExt |
+    Where-Object { $_ } |
+    Sort-Object -Unique
 
     if (-not $Formats) {
         throw "Specificare almeno un formato valido."
@@ -29,30 +29,32 @@ function Get-ExportDestination {
 
     # --- Costruzione default file ---
     $defaultNameExt = ConvertTo-NormalizedExt ([IO.Path]::GetExtension($DefaultFileName))
-    $defaultBase    = if ($defaultNameExt) {
+    $defaultBase = if ($defaultNameExt) {
         [IO.Path]::GetFileNameWithoutExtension($DefaultFileName)
-    } else {
+    }
+    else {
         $DefaultFileName
     }
 
-    $defaultExt  = $PreferredFormat ?? ($defaultNameExt -in $Formats ? $defaultNameExt : $Formats[0])
+    $defaultExt = $PreferredFormat ?? ($defaultNameExt -in $Formats ? $defaultNameExt : $Formats[0])
     $defaultFile = "$defaultBase.$defaultExt"
     $defaultFull = Join-Path $InitialDirectory $defaultFile
 
     # --- GUI ---
     if (-not $UseConsole -and (Test-GuiAvailability)) {
         $dlg = [System.Windows.Forms.SaveFileDialog]::new()
-        $dlg.Title            = $Title
+        $dlg.Title = $Title
         $dlg.InitialDirectory = $InitialDirectory
-        $dlg.Filter           = New-FileDialogFilter -Extensions $Formats -IncludeAllFiles
-        $dlg.FileName         = $defaultFile
-        $dlg.DefaultExt       = $defaultExt
-        $dlg.AddExtension     = $true
+        $dlg.Filter = New-FileDialogFilter -Extensions $Formats -IncludeAllFiles
+        $dlg.FileName = $defaultFile
+        $dlg.DefaultExt = $defaultExt
+        $dlg.AddExtension = $true
         $dlg.OverwritePrompt = $true
 
         if ($dlg.ShowDialog() -eq 'OK') {
             $path = $dlg.FileName
-        } else {
+        }
+        else {
             throw "Operazione annullata."
         }
     }

@@ -8,7 +8,7 @@ function Assert-Module {
         [string] $MinimumVersion,
 
         [Parameter()]
-        [ValidateSet('CurrentUser','AllUsers')]
+        [ValidateSet('CurrentUser', 'AllUsers')]
         [string] $Scope = 'CurrentUser',
 
         [Parameter()]
@@ -19,9 +19,9 @@ function Assert-Module {
     )
 
     # Trova la versione più recente installata
-    $installed  = Get-Module -ListAvailable -Name $Name |
-             Sort-Object Version -Descending |
-             Select-Object -First 1
+    $installed = Get-Module -ListAvailable -Name $Name |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
 
     
     $needsInstall = $false
@@ -53,8 +53,8 @@ function Assert-Module {
     }
 
     if ($AllowClobber) {
-            $installParams.AllowClobber = $true
-        }
+        $installParams.AllowClobber = $true
+    }
 
     if ($AutoInstall) {
         Install-Module @installParams
@@ -63,7 +63,8 @@ function Assert-Module {
 
     $question = if ($MinimumVersion) {
         "Installare il modulo '$Name' (AllowClobber=$AllowClobber) (>= $MinimumVersion)?"
-    } else {
+    }
+    else {
         "Installare il modulo '$Name' (AllowClobber=$AllowClobber)?"
     }
 

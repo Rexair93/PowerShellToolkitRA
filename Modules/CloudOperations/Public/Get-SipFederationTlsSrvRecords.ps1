@@ -1,55 +1,53 @@
 function Get-SipFederationTlsSrvRecords {
     <#
     .SYNOPSIS
-    Recupera ed esporta i record DNS SRV _sipfederationtls._tcp dei domini del tenant Microsoft 365.
+        Recupera i record DNS SRV _sipfederationtls._tcp per i domini del tenant Microsoft 365.
 
     .DESCRIPTION
-    Si connette a Microsoft Graph, legge i domini del tenant, risolve per ciascuno
-    il record SRV _sipfederationtls._tcp e ne esporta i risultati in formato XLSX
-    o CSV tramite le utility condivise del modulo.
+        Si connette a Microsoft Graph e risolve il record SRV _sipfederationtls._tcp
+        per ciascun dominio. Se viene fornito -Domain, usa quella lista; altrimenti
+        recupera tutti i domini del tenant tramite Get-MgDomain.
 
-    .PARAMETER OutputPath
-    Percorso completo del file di output. Se non specificato, viene richiesto tramite
-    Get-ExportDestination.
+    .PARAMETER Domain
+        Uno o più domini da interrogare. Accetta input da pipeline.
+        Se omesso, vengono usati tutti i domini del tenant.
 
     .PARAMETER Scopes
-    Scope Microsoft Graph da usare per il recupero dei domini.
+        Scope Microsoft Graph da usare. Default: 'Domain.Read.All'.
 
     .PARAMETER TenantId
-    Tenant ID da usare per la connessione a Microsoft Graph.
+        Tenant ID da usare per la connessione a Microsoft Graph.
 
     .PARAMETER UseDeviceCode
-    Usa l'autenticazione device code per la connessione a Microsoft Graph.
-
-    .PARAMETER UseConsole
-    Forza la scelta del file di destinazione in modalità console.
+        Usa l'autenticazione device code per la connessione a Microsoft Graph.
 
     .PARAMETER AutoInstallModules
-    Installa automaticamente i moduli mancanti richiesti.
+        Installa automaticamente i moduli mancanti richiesti.
+
+    .PARAMETER ForceReconnect
+        Forza una nuova connessione a Microsoft Graph.
 
     .PARAMETER DnsServer
-    Server DNS specifico da usare per la risoluzione dei record SRV.
-
-    .PARAMETER Force
-    Consente la sovrascrittura del file di output quando supportato.
+        Server DNS specifico per la risoluzione SRV. Se omesso usa il resolver di sistema.
 
     .OUTPUTS
-    PSCustomObject con Path e Format.
+        PSCustomObject per ogni record SRV trovato, con proprietà:
+        Domain, QueryName, NameTarget, Port, Priority, Weight, Ttl,
+        IsDefault, IsInitial, IsVerified, Authentication.
 
     .EXAMPLE
-    Export-SipFederationTlsSrvRecords
+        Get-SipFederationTlsSrvRecords
 
     .EXAMPLE
-    Export-SipFederationTlsSrvRecords -UseConsole -Verbose
+        Get-SipFederationTlsSrvRecords -Domain "contoso.com", "fabrikam.com"
 
     .EXAMPLE
-    Export-SipFederationTlsSrvRecords -TenantId "contoso.onmicrosoft.com" -UseDeviceCode
+        "contoso.com", "fabrikam.com" | Get-SipFederationTlsSrvRecords -DnsServer "8.8.8.8"
     #>
-
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding()]
     param(
-        [Parameter()]
-        [string] $OutputPath,
+        [Parameter(ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        [string[]] $Domain,
 
         [Parameter()]
         [string[]] $Scopes = @('Domain.ReadWrite.All'),
@@ -60,104 +58,92 @@ function Get-SipFederationTlsSrvRecords {
         [Parameter()]
         [switch] $UseDeviceCode,
 
-        # Forza modalità console (no GUI)
-        [Parameter()]
-        [switch] $UseConsole,
-
         [Parameter()]
         [switch] $AutoInstallModules,
 
         [Parameter()]
-        [string] $DnsServer,
+        [switch] $ForceReconnect,
 
         [Parameter()]
-        [switch] $Force
+        [string] $DnsServer
     )
 
-    try {
-    # 1) Connessione Graph
-    Write-Verbose "Connessione a Microsoft Graph..."
-    Connect-ToGraph `
-        -Scopes $Scopes `
-        -TenantId $TenantId `
-        -UseDeviceCode:$UseDeviceCode `
-        -AutoInstallModules:$AutoInstallModules `
-        -Verbose:$VerbosePreference
+    begin {
+        Write-Verbose "Connessione a Microsoft Graph..."
+        Connect-ToGraph `
+            -Scopes             $Scopes `
+            -TenantId           $TenantId `
+            -UseDeviceCode:     $UseDeviceCode `
+            -AutoInstallModules:$AutoInstallModules `
+            -ForceReconnect:    $ForceReconnect `
+            -Verbose:           $VerbosePreference
 
-    # 2) OutputPath (se non fornito)
-    if (-not $OutputPath) {
-        Write-Verbose "Richiesta percorso di esportazione..."
-        $destination = Get-ExportDestination `
-            -DefaultFileName "sipfederationtls_srv_records.xlsx" `
-            -Formats @("xlsx","csv") `
-            -PreferredFormat "xlsx" `
-            -Title 'Scegli dove salvare l''export dei record SRV sipfederationtls' `
-            -UseConsole:$UseConsole `
-            -Force:$Force
-        
-        $OutputPath = $destination.Path
-    }
-
-    # 3) Recupero domini
-    Write-Verbose "Recupero domini da Microsoft Graph..."
-    $domains = Get-MgDomain -ErrorAction Stop
-
-    # 4) Risultati
-    $results = New-Object System.Collections.Generic.List[object]
-
-    foreach ($domain in $domains) {
-        $domainName = $domain.Id
-
-        if ([string]::IsNullOrWhiteSpace($domainName)) {
-            continue
+        # Se non vengono forniti domini specifici, recupera tutti i domini del tenant
+        $allTenantDomains = $null
+        if (-not $Domain) {
+            Write-Verbose "Recupero tutti i domini del tenant da Microsoft Graph..."
+            $allTenantDomains = Get-MgDomain -ErrorAction Stop
         }
-        
-        $recordName = "_sipfederationtls._tcp.$domainName"
-        Write-Verbose "Risoluzione SRV per: $recordName"
 
-        $dnsInfo = Resolve-SrvRecordSafe -Name $recordName -Server $DnsServer -Verbose:$VerbosePreference
-        if ($null -eq $dnsInfo) { continue }
+        $results = [System.Collections.Generic.List[object]]::new()
+    }
 
-        foreach ($rec in $dnsInfo) {
-            $results.Add([pscustomobject]@{
-                Domain     = $domainName
-                QueryName  = $recordName
-                NameTarget = $rec.NameTarget
-                Port       = $rec.Port
-                Priority   = $rec.Priority
-                Weight     = $rec.Weight
-                Ttl        = $rec.TTL
-                IsDefault     = $domain.IsDefault
-                IsInitial     = $domain.IsInitial
-                IsVerified    = $domain.IsVerified
-                Authentication = $domain.AuthenticationType
-            })
+    process {
+        # Determina la lista su cui iterare in questo invocation
+        $targets = if ($Domain) {
+            # Costruisce oggetti minimali compatibili con il loop sottostante
+            $Domain | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                ForEach-Object { [pscustomobject]@{
+                    Id               = $_
+                    IsDefault        = $null
+                    IsInitial        = $null
+                    IsVerified       = $null
+                    AuthenticationType = $null
+                } }
+        } else {
+            $allTenantDomains
+        }
+
+        foreach ($dom in $targets) {
+            $domainName = $dom.Id
+            if ([string]::IsNullOrWhiteSpace($domainName)) { continue }
+
+            $recordName = "_sipfederationtls._tcp.$domainName"
+            Write-Verbose "Risoluzione SRV per: $recordName"
+
+            $dnsInfo = Resolve-SrvRecordSafe `
+                -Name    $recordName `
+                -Server  $DnsServer `
+                -Verbose:$VerbosePreference
+
+            if ($null -eq $dnsInfo) { continue }
+
+            foreach ($rec in $dnsInfo) {
+                $results.Add([pscustomobject]@{
+                    Domain         = $domainName
+                    QueryName      = $recordName
+                    NameTarget     = $rec.NameTarget
+                    Port           = $rec.Port
+                    Priority       = $rec.Priority
+                    Weight         = $rec.Weight
+                    Ttl            = $rec.TTL
+                    IsDefault      = $dom.IsDefault
+                    IsInitial      = $dom.IsInitial
+                    IsVerified     = $dom.IsVerified
+                    Authentication = $dom.AuthenticationType
+                })
+            }
         }
     }
 
-    Write-Verbose "Totale record trovati: $($results.Count)"
-    $finalResults = $results.ToArray() | Sort-Object Domain, Priority, Weight
+    end {
+        Write-Verbose "Totale record trovati: $($results.Count)"
 
-    if (-not $finalResults) {
-        Write-Warning "Nessun record SRV _sipfederationtls._tcp trovato per i domini del tenant."
-        return
-    }
-
-    # 5) Export
-    if ($PSCmdlet.ShouldProcess($OutputPath, "Esporta record SRV sipfederationtls")) {
-        Write-Verbose "Esportazione risultati in corso..."
-        $export = Export-Results `
-            -InputObject $finalResults `
-            -Path $OutputPath `
-            -WorksheetName 'SRV_sipfederationtls' `
-            -Force:$Force
-
-        Write-Verbose "Esportazione completata: $($export.Path)"
-        return $export
-    }
-    }
-    catch {
-            $message = "Errore durante l'esportazione dei record SRV sipfederationtls: $($_.Exception.Message)"
-            Write-Error $message
+        if ($results.Count -eq 0) {
+            Write-Warning "Nessun record SRV _sipfederationtls._tcp trovato."
+            return
         }
+
+        $results.ToArray() | Sort-Object Domain, Priority, Weight
+    }
 }
