@@ -38,24 +38,25 @@ Scegli modalità:
         $commonParams.CaseSensitive = $true
     }
 
+    $searchTerms = @()
+
     switch ($mode) {
         '1' {
             $rawTerms = Read-Host 'Inserisci uno o più termini separati da virgola'
-            $searchValues = $rawTerms -split ',' |
+            $searchTerms = $rawTerms -split ',' |
                 ForEach-Object { $_.Trim() } |
                 Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
                 Sort-Object -Unique
-
-            if (-not $searchValues) {
-                throw 'Nessun termine di ricerca specificato.'
-            }
-
-            $results = Find-InCsv @commonParams -SearchValue $searchValues
         }
 
         '2' {
             $searchFolderPath = Get-FolderPath -Title 'Seleziona la cartella da cui ricavare i termini di ricerca'
-            $results = Find-InCsv @commonParams -SearchFolderPath $searchFolderPath
+
+            $searchTerms = Get-ChildItem -Path $searchFolderPath -File |
+                Select-Object -ExpandProperty BaseName |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Sort-Object -Unique
         }
 
         default {
@@ -63,29 +64,52 @@ Scegli modalità:
         }
     }
 
-    if (-not $results) {
-        Write-Host 'Nessuna corrispondenza trovata.'
-        return
+    if (-not $searchTerms) {
+        throw 'Nessun termine di ricerca disponibile.'
     }
 
-    Write-Host "Trovate $($results.Count) corrispondenze."
-    $results | Format-Table -AutoSize
-
     $exportChoice = Read-Host 'Vuoi esportare i risultati? (S/N)'
+
     if ($exportChoice -match '^[SsYy]') {
-        $export = Get-ExportDestination `
-            -DefaultFileName 'Find-InCsv_Report.csv' `
-            -InitialDirectory $csvRootPath `
-            -Formats @('csv', 'xlsx') `
-            -PreferredFormat 'csv' `
-            -Title 'Scegli il file di destinazione'
+        $exportFolder = Get-FolderPath -Title 'Seleziona la cartella in cui salvare gli export'
 
-        $exported = Export-Results `
-            -InputObject $results `
-            -Path $export.Path `
-            -Force
+        foreach ($term in $searchTerms) {
+            $results = Find-InCsv @commonParams -SearchValue $term
 
-        Write-Host "Risultati esportati in: $($exported.Path)"
+            if (-not $results) {
+                Write-Host "Nessuna corrispondenza trovata per '$term'."
+                continue
+            }
+
+            $safeFileName = ConvertTo-SafeFileName -Name $term
+
+            $exportInfo = Get-ExportDestination `
+                -DefaultFileName "$safeFileName.csv" `
+                -InitialDirectory $exportFolder `
+                -Formats @('csv', 'xlsx') `
+                -PreferredFormat 'csv' `
+                -Title "Scegli dove salvare i risultati per '$term'"
+
+            $exported = Export-Results `
+                -InputObject $results `
+                -Path $exportInfo.Path `
+                -Force
+
+            Write-Host "Risultati per '$term' esportati in: $($exported.Path)"
+        }
+    }
+    else {
+        foreach ($term in $searchTerms) {
+            $results = Find-InCsv @commonParams -SearchValue $term
+
+            if (-not $results) {
+                Write-Host "Nessuna corrispondenza trovata per '$term'."
+                continue
+            }
+
+            Write-Host "`n=== Risultati per '$term' ==="
+            $results | Format-Table -AutoSize
+        }
     }
 }
 catch {
