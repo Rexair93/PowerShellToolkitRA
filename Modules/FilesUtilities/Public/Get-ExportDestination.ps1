@@ -17,7 +17,7 @@ function Get-ExportDestination {
     ConvertTo-NormalizedExt |
     Where-Object { $_ } |
     Sort-Object -Unique
-
+    
     if (-not $Formats) {
         throw "Specificare almeno un formato valido."
     }
@@ -36,7 +36,15 @@ function Get-ExportDestination {
         $DefaultFileName
     }
 
-    $defaultExt = $PreferredFormat ?? ($defaultNameExt -in $Formats ? $defaultNameExt : $Formats[0])
+    if ($PreferredFormat) {
+        $defaultExt = $PreferredFormat
+    }
+    elseif ($defaultNameExt -and ($defaultNameExt -in $Formats)) {
+        $defaultExt = $defaultNameExt
+    }
+    else {
+        $defaultExt = $Formats[0]
+    }
     $defaultFile = "$defaultBase.$defaultExt"
     $defaultFull = Join-Path $InitialDirectory $defaultFile
 
