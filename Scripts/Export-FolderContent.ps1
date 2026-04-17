@@ -9,6 +9,12 @@ param(
     [string] $ExportFormat,
 
     [Parameter()]
+    [string[]] $Extensions,
+
+    [Parameter()]
+    [switch] $Recurse,
+
+    [Parameter()]
     [switch] $UseConsole
 )
 
@@ -33,10 +39,61 @@ function Get-MultiExportFormat {
     return $normalized
 }
 
+function Get-ExtensionsFromPrompt {
+    [CmdletBinding()]
+    param()
+
+    $extInput = Read-Host "Inserisci le estensioni da filtrare separate da ';' (es: txt;csv;pdf;aac;mp4), oppure premi INVIO per nessun filtro"
+
+    if ([string]::IsNullOrWhiteSpace($extInput)) {
+        return @()
+    }
+
+    $extensions = $extInput.Split(';') |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    return $extensions
+}
+
+function Get-SafeExportBaseName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $safeName = $Name.Trim()
+    while ($safeName.EndsWith('.')) {
+        $safeName = $safeName.Substring(0, $safeName.Length - 1)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($safeName)) {
+        throw "Nome file di export non valido."
+    }
+
+    return $safeName
+}
+
+function Resolve-SelectedExtensions {
+    [CmdletBinding()]
+    param(
+        [string[]] $Extensions
+    )
+
+    if ($Extensions -and $Extensions.Count -gt 0) {
+        return $Extensions
+    }
+
+    return Get-ExtensionsFromPrompt
+}
+
 function Export-SingleFolderContent {
     [CmdletBinding()]
     param(
         [string] $ExportFormat,
+        [string[]] $Extensions,
+        [switch] $Recurse,
         [switch] $UseConsole
     )
 
@@ -55,12 +112,21 @@ function Export-SingleFolderContent {
     }
 
     $resolvedInputPath = (Resolve-Path -Path $inputPath).Path
-    $folderName = Split-Path -Path $resolvedInputPath -Leaf
+    $folderName = Get-SafeExportBaseName -Name (Split-Path -Path $resolvedInputPath -Leaf)
+
+    $selectedExtensions = Resolve-SelectedExtensions -Extensions $Extensions
+    $hasExtensionFilter = $selectedExtensions.Count -gt 0
+
+    if ($hasExtensionFilter) {
+        Write-Host ""
+        Write-Host "Filtro estensioni attivo: $($selectedExtensions -join ', ')"
+        Write-Host ""
+    }
 
     $destinationParams = @{
         DefaultFileName  = "$folderName.csv"
         InitialDirectory = (Get-Location).Path
-        Formats          = @('csv', 'xlsx')
+        Formats          = @('xlsx', 'csv')
         Title            = "Scegli dove salvare l'export della cartella"
         UseConsole       = $UseConsole
         Force            = $true
@@ -72,8 +138,23 @@ function Export-SingleFolderContent {
     }
 
     $destination = Get-ExportDestination @destinationParams
-    $data = Get-FolderContentReport -FolderPath $resolvedInputPath
-    $result = Export-Results -InputObject $data -Path $destination.Path -WorksheetName $folderName -Force
+
+    $data = Get-FolderContentReport `
+        -FolderPath $resolvedInputPath `
+        -Extensions $selectedExtensions `
+        -Recurse:$Recurse
+    
+    if (@($data).Count -eq 0) {
+        Write-Warning "Nessun elemento trovato nella cartella '$resolvedInputPath' con i filtri specificati. Nessun file esportato."
+        return
+    }
+
+    $worksheetName = $folderName
+    if ($hasExtensionFilter) {
+        $worksheetName = "$worksheetName-filtered"
+    }
+
+    $result = Export-Results -InputObject $data -Path $destination.Path -WorksheetName $worksheetName -Force
 
     Write-Host ""
     Write-Host "Esportazione completata:" -ForegroundColor Green
@@ -85,6 +166,8 @@ function Export-MultipleFolderContents {
     [CmdletBinding()]
     param(
         [string] $ExportFormat,
+        [string[]] $Extensions,
+        [switch] $Recurse,
         [switch] $UseConsole
     )
 
@@ -116,12 +199,26 @@ function Export-MultipleFolderContents {
         $ExportFormat
     }
     else {
-        Get-MultiExportFormat -Default 'csv'
+        if ($UseConsole) {
+            Get-MultiExportFormat -Default 'csv'
+        }
+        else {
+            'csv'
+        }
+    }
+
+    $selectedExtensions = Resolve-SelectedExtensions -Extensions $Extensions
+    $hasExtensionFilter = $selectedExtensions.Count -gt 0
+
+    if ($hasExtensionFilter) {
+        Write-Host ""
+        Write-Host "Filtro estensioni attivo: $($selectedExtensions -join ', ')"
+        Write-Host ""
     }
 
     $folderPaths = Get-Content -Path $inputListFile |
-    ForEach-Object { $_.Trim() } |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
     if (-not $folderPaths) {
         throw "Il file '$inputListFile' non contiene percorsi validi."
@@ -135,11 +232,25 @@ function Export-MultipleFolderContents {
 
         try {
             $resolvedInputPath = (Resolve-Path -Path $inputPath).Path
-            $folderName = Split-Path -Path $resolvedInputPath -Leaf
+            $folderName = Get-SafeExportBaseName -Name (Split-Path -Path $resolvedInputPath -Leaf)
             $outputFilePath = Join-Path -Path $outputFolder -ChildPath "$folderName.$selectedFormat"
 
-            $data = Get-FolderContentReport -FolderPath $resolvedInputPath
-            $result = Export-Results -InputObject $data -Path $outputFilePath -WorksheetName $folderName -Force
+            $data = Get-FolderContentReport `
+                -FolderPath $resolvedInputPath `
+                -Extensions $selectedExtensions `
+                -Recurse:$Recurse
+            
+            if (@($data).Count -eq 0) {
+                Write-Warning "Nessun elemento trovato nella cartella '$resolvedInputPath' con i filtri specificati. Nessun file esportato."
+                continue
+            }
+
+            $worksheetName = $folderName
+            if ($hasExtensionFilter) {
+                $worksheetName = "$worksheetName-filtered"
+            }
+
+            $result = Export-Results -InputObject $data -Path $outputFilePath -WorksheetName $worksheetName -Force
 
             Write-Host ""
             Write-Host "Esportata lista per '$resolvedInputPath'" -ForegroundColor Green
@@ -173,6 +284,18 @@ if (-not $Mode) {
 }
 
 switch ($Mode) {
-    'Single' { Export-SingleFolderContent -ExportFormat $ExportFormat -UseConsole:$UseConsole }
-    'List' { Export-MultipleFolderContents -ExportFormat $ExportFormat -UseConsole:$UseConsole }
+    'Single' {
+        Export-SingleFolderContent `
+            -ExportFormat $ExportFormat `
+            -Extensions $Extensions `
+            -Recurse:$Recurse `
+            -UseConsole:$UseConsole
+    }
+    'List' {
+        Export-MultipleFolderContents `
+            -ExportFormat $ExportFormat `
+            -Extensions $Extensions `
+            -Recurse:$Recurse `
+            -UseConsole:$UseConsole
+    }
 }

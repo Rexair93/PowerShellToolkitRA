@@ -5,11 +5,41 @@ function Get-FolderContentReport {
         [Alias('FullName', 'Path')]
         [string[]] $FolderPath,
 
-        [switch] $IncludeSourceFolder
+        [string[]] $Extensions,
+
+        [switch] $IncludeSourceFolder,
+
+        [switch] $Recurse
     )
 
     begin {
         $results = New-Object System.Collections.Generic.List[object]
+
+        $normalizedExtensions = @()
+        if ($Extensions) {
+            $normalizedExtensions = $Extensions |
+                ConvertTo-NormalizedExt |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Sort-Object -Unique
+        }
+
+        $hasExtensionFilter = $normalizedExtensions.Count -gt 0
+
+        $baseProperties = @(
+            'Name',
+            'Size [MB]',
+            'Extension',
+            'CreationTime',
+            'LastAccessTime',
+            'LastWriteTime',
+            'FullName',
+            'Length',
+            'BaseName',
+            'Directory',
+            'PSIsContainer'
+        )
+
+        $propertiesWithSourceFolder = @('SourceFolder') + $baseProperties
     }
 
     process {
@@ -27,32 +57,59 @@ function Get-FolderContentReport {
             $resolvedFolder = (Resolve-Path -Path $currentFolder).Path
             $folderName = Split-Path -Path $resolvedFolder -Leaf
 
-            Get-ChildItem -Path $resolvedFolder -Force | ForEach-Object {
+            $getChildItemParams = @{
+                Path  = $resolvedFolder
+                Force = $true
+            }
+
+            if ($Recurse) {
+                $getChildItemParams.Recurse = $true
+            }
+
+            if ($hasExtensionFilter) {
+                $getChildItemParams.File = $true
+            }
+
+            $items = Get-ChildItem @getChildItemParams
+
+            if ($hasExtensionFilter) {
+                $items = $items | Where-Object {
+                    (ConvertTo-NormalizedExt $_.Extension) -in $normalizedExtensions
+                }
+            }
+
+            foreach ($entry in $items) {
                 $item = [pscustomobject]@{
                     SourceFolder   = $folderName
-                    Name           = $_.Name
-                    'Size [MB]'    = [Math]::Round(($_.Length / 1MB), 2)
-                    Extension      = $_.Extension
-                    CreationTime   = $_.CreationTime
-                    LastAccessTime = $_.LastAccessTime
-                    LastWriteTime  = $_.LastWriteTime
-                    FullName       = $_.FullName
-                    Length         = $_.Length
-                    BaseName       = $_.BaseName
-                    Directory      = $_.DirectoryName
-                    PSIsContainer  = $_.PSIsContainer
+                    Name           = $entry.Name
+                    'Size [MB]'    = if ($entry.PSIsContainer -or $null -eq $entry.Length) {
+                        $null
+                    }
+                    else {
+                        [Math]::Round(($entry.Length / 1MB), 2)
+                    }
+                    Extension      = $entry.Extension
+                    CreationTime   = $entry.CreationTime
+                    LastAccessTime = $entry.LastAccessTime
+                    LastWriteTime  = $entry.LastWriteTime
+                    FullName       = $entry.FullName
+                    Length         = $entry.Length
+                    BaseName       = $entry.BaseName
+                    Directory      = $entry.DirectoryName
+                    PSIsContainer  = $entry.PSIsContainer
                 }
 
-                if (-not $IncludeSourceFolder) {
-                    $item = $item | Select-Object Name, 'Size [MB]', Extension, CreationTime, LastAccessTime, LastWriteTime, FullName, Length, BaseName, Directory, PSIsContainer
+                if ($IncludeSourceFolder) {
+                    $results.Add(($item | Select-Object -Property $propertiesWithSourceFolder))
                 }
-
-                $results.Add($item)
+                else {
+                    $results.Add(($item | Select-Object -Property $baseProperties))
+                }
             }
         }
     }
 
     end {
-        $results
+        $results.ToArray()
     }
 }
