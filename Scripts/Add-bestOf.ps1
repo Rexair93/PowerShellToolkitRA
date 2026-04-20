@@ -73,7 +73,7 @@ function Resolve-OutputTarget {
         [switch]$Force
     )
 
-    $safeName = ConvertTo-SafeFileName -FileName $OutputFileName
+    $safeName = ConvertTo-SafeFileName -Name $OutputFileName
     $allowedFormats = @('csv', 'xlsx', 'ods')
 
     if (-not $OutputPath) {
