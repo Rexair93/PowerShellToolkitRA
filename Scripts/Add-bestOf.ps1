@@ -177,6 +177,13 @@ if (-not $SearchValue) {
     $SearchValue = (Read-Host 'Inserisci la stringa da cercare').Trim()
 }
 
+if (-not $Recurse) {
+    $recurseChoice = Read-Host 'Includere sottocartelle? (S/N)'
+    if ($recurseChoice -match '^[SsYy]') {
+        $Recurse = $true
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($SearchValue)) {
     throw 'Stringa di ricerca non valida.'
 }

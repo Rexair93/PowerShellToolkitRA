@@ -19,9 +19,9 @@ Scegli modalità:
     if ($limitToColumns -match '^[SsYy]') {
         $columnInput = Read-Host 'Inserisci i nomi colonna separati da virgola'
         $columns = $columnInput -split ',' |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            Sort-Object -Unique
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Sort-Object -Unique
 
         if ($columns) {
             $commonParams.Column = $columns
@@ -41,10 +41,10 @@ Scegli modalità:
     switch ($mode) {
         '1' {
             $rawTerms = Read-Host 'Inserisci uno o più termini separati da virgola'
-            $searchTerms = $rawTerms -split ',' |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-                Sort-Object -Unique
+            [string[]] $searchTerms = $rawTerms -split ',' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Sort-Object -Unique
 
             if (-not $searchTerms) {
                 throw 'Nessun termine di ricerca disponibile.'
@@ -132,10 +132,10 @@ Scegli modalità:
             $exportChoice = Read-Host 'Vuoi esportare i risultati? (S/N)'
 
             $searchTerms = Get-ChildItem -Path $searchFolderPath -File |
-                Select-Object -ExpandProperty BaseName |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-                Sort-Object -Unique
+            Select-Object -ExpandProperty BaseName |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Sort-Object -Unique
 
             if (-not $searchTerms) {
                 throw 'Nessun termine di ricerca disponibile.'
