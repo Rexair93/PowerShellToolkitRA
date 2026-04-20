@@ -29,6 +29,8 @@ param(
     [switch]$Force
 )
 
+Import-Module FilesUtilities -ErrorAction Stop
+
 function Read-ChoiceValue {
     param(
         [Parameter(Mandatory)] [string]   $Prompt,
