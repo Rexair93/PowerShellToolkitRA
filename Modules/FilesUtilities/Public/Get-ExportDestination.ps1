@@ -9,7 +9,8 @@ function Get-ExportDestination {
         [string] $Title = "Scegli dove salvare il report",
         [switch] $UseConsole,
         [switch] $Force,
-        [switch] $AsString
+        [switch] $AsString,
+        [switch] $AllowAnyExtension
     )
 
     # --- Normalizzazione formati ---
@@ -83,7 +84,7 @@ function Get-ExportDestination {
         $path = "$path.$ext"
     }
 
-    if ($ext -notin $Formats) {
+    if (-not $AllowAnyExtension -and $ext -notin $Formats) {
         throw "Estensione '.$ext' non consentita."
     }
 
