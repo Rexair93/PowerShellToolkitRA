@@ -1,21 +1,28 @@
 function Add-TeamGroupMemberSafe {
     <#
     .SYNOPSIS
-    Aggiunge in modo sicuro un utente a un Microsoft 365 Group associato a un Team.
+    Aggiunge in modo sicuro un utente a un Microsoft 365 Group associato a un Team,
+    gestendo anche il ruolo Member o Owner.
 
     .DESCRIPTION
     Riceve un Team/Group ID e un utente già risolto, quindi tenta l'aggiunta
     tramite Microsoft Graph.
 
-    Se il TeamId non corrisponde a un Team valido, genera un errore.
-    Se l'utente è già membro, restituisce uno stato specifico senza interrompere il flusso.
+    Se il ruolo richiesto è Owner:
+    - aggiunge l'utente come membro, se necessario;
+    - promuove poi l'utente a owner del gruppo sottostante al Team.
+
+    Se il ruolo non è specificato o non riconosciuto, viene usato Member.
 
     .PARAMETER TeamId
     ID del Team da aggiornare. Coincide con il GroupId del Microsoft 365 Group sottostante.
 
     .PARAMETER User
-    Oggetto utente canonico già risolto, contenente almeno:
-    ObjectId, UserPrincipalName, DisplayName, MailNickName, SourceIdentity, SourceIdentityType.
+    Oggetto utente canonico già risolto.
+
+    .PARAMETER Role
+    Ruolo da assegnare. Valori supportati: Member, Owner.
+    Default: Member.
 
     .PARAMETER TenantId
     Tenant ID da usare per la connessione a Microsoft Graph.
@@ -34,19 +41,7 @@ function Add-TeamGroupMemberSafe {
     Default: Group.Read.All, GroupMember.ReadWrite.All, User.Read.All.
 
     .OUTPUTS
-    PSCustomObject con:
-    TeamId, TeamDisplayName, UserObjectId, UserPrincipalName, UserDisplayName,
-    UserMailNickName, Status, Message.
-
-    .EXAMPLE
-    $user | Add-TeamGroupMemberSafe -TeamId '00000000-0000-0000-0000-000000000000'
-
-    .EXAMPLE
-    Add-TeamGroupMemberSafe `
-        -TeamId '00000000-0000-0000-0000-000000000000' `
-        -User $resolvedUser `
-        -TenantId '11111111-1111-1111-1111-111111111111' `
-        -UseDeviceCode
+    PSCustomObject
     #>
     [CmdletBinding()]
     param(
@@ -57,6 +52,10 @@ function Add-TeamGroupMemberSafe {
         [Parameter(Mandatory, ValueFromPipeline)]
         [ValidateNotNull()]
         [object[]] $User,
+
+        [Parameter()]
+        [ValidateSet('Member', 'Owner')]
+        [string] $Role = 'Member',
 
         [Parameter()]
         [string] $TenantId,
@@ -107,7 +106,6 @@ function Add-TeamGroupMemberSafe {
             }
         }
 
-        Write-Verbose "Validazione Team target..."
         try {
             $teamGroup = Get-MgGroup `
                 -GroupId $TeamId `
@@ -133,6 +131,8 @@ function Add-TeamGroupMemberSafe {
                 [pscustomobject][ordered]@{
                     TeamId            = $teamGroup.Id
                     TeamDisplayName   = $teamGroup.DisplayName
+                    RequestedRole     = $Role
+                    EffectiveRole     = 'Member'
                     UserObjectId      = $null
                     UserPrincipalName = $null
                     UserDisplayName   = $null
@@ -147,6 +147,8 @@ function Add-TeamGroupMemberSafe {
                 [pscustomobject][ordered]@{
                     TeamId            = $teamGroup.Id
                     TeamDisplayName   = $teamGroup.DisplayName
+                    RequestedRole     = $Role
+                    EffectiveRole     = 'Member'
                     UserObjectId      = $null
                     UserPrincipalName = $currentUser.UserPrincipalName
                     UserDisplayName   = $currentUser.DisplayName
@@ -157,6 +159,9 @@ function Add-TeamGroupMemberSafe {
                 continue
             }
 
+            $memberStatus = 'Added'
+            $memberMessage = 'Utente aggiunto correttamente al Team.'
+
             try {
                 $directoryObjectRef = @{
                     '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$($currentUser.ObjectId)"
@@ -166,37 +171,102 @@ function Add-TeamGroupMemberSafe {
                     -GroupId $teamGroup.Id `
                     -BodyParameter $directoryObjectRef `
                     -ErrorAction Stop
-
-                [pscustomobject][ordered]@{
-                    TeamId            = $teamGroup.Id
-                    TeamDisplayName   = $teamGroup.DisplayName
-                    UserObjectId      = $currentUser.ObjectId
-                    UserPrincipalName = $currentUser.UserPrincipalName
-                    UserDisplayName   = $currentUser.DisplayName
-                    UserMailNickName  = $currentUser.MailNickName
-                    Status            = 'Added'
-                    Message           = 'Utente aggiunto correttamente al Team.'
-                }
             }
             catch {
-                $message = $_.Exception.Message
-                $status = 'AddFailed'
+                $memberMessage = $_.Exception.Message
+                if ($memberMessage -match 'added object references already exist' -or
+                    $memberMessage -match 'One or more added object references already exist') {
+                    $memberStatus = 'AlreadyMember'
+                }
+                else {
+                    [pscustomobject][ordered]@{
+                        TeamId            = $teamGroup.Id
+                        TeamDisplayName   = $teamGroup.DisplayName
+                        RequestedRole     = $Role
+                        EffectiveRole     = 'Member'
+                        UserObjectId      = $currentUser.ObjectId
+                        UserPrincipalName = $currentUser.UserPrincipalName
+                        UserDisplayName   = $currentUser.DisplayName
+                        UserMailNickName  = $currentUser.MailNickName
+                        Status            = 'AddFailed'
+                        Message           = $memberMessage
+                    }
+                    continue
+                }
+            }
 
-                if ($message -match 'added object references already exist' -or
-                    $message -match 'One or more added object references already exist') {
-                    $status = 'AlreadyMember'
+            if ($Role -eq 'Owner') {
+                try {
+                    $ownerRef = @{
+                        '@odata.id' = "https://graph.microsoft.com/v1.0/directoryObjects/$($currentUser.ObjectId)"
+                    }
+
+                    New-MgGroupOwnerByRef `
+                        -GroupId $teamGroup.Id `
+                        -BodyParameter $ownerRef `
+                        -ErrorAction Stop
+
+                    [pscustomobject][ordered]@{
+                        TeamId            = $teamGroup.Id
+                        TeamDisplayName   = $teamGroup.DisplayName
+                        RequestedRole     = $Role
+                        EffectiveRole     = 'Owner'
+                        UserObjectId      = $currentUser.ObjectId
+                        UserPrincipalName = $currentUser.UserPrincipalName
+                        UserDisplayName   = $currentUser.DisplayName
+                        UserMailNickName  = $currentUser.MailNickName
+                        Status            = if ($memberStatus -eq 'AlreadyMember') { 'OwnerAssigned' } else { 'AddedAsOwner' }
+                        Message           = 'Utente aggiunto e impostato come owner del Team.'
+                    }
+                }
+                catch {
+                    $ownerMessage = $_.Exception.Message
+
+                    if ($ownerMessage -match 'added object references already exist' -or
+                        $ownerMessage -match 'One or more added object references already exist') {
+                        [pscustomobject][ordered]@{
+                            TeamId            = $teamGroup.Id
+                            TeamDisplayName   = $teamGroup.DisplayName
+                            RequestedRole     = $Role
+                            EffectiveRole     = 'Owner'
+                            UserObjectId      = $currentUser.ObjectId
+                            UserPrincipalName = $currentUser.UserPrincipalName
+                            UserDisplayName   = $currentUser.DisplayName
+                            UserMailNickName  = $currentUser.MailNickName
+                            Status            = 'AlreadyOwner'
+                            Message           = 'Utente già owner del Team.'
+                        }
+                    }
+                    else {
+                        [pscustomobject][ordered]@{
+                            TeamId            = $teamGroup.Id
+                            TeamDisplayName   = $teamGroup.DisplayName
+                            RequestedRole     = $Role
+                            EffectiveRole     = 'Member'
+                            UserObjectId      = $currentUser.ObjectId
+                            UserPrincipalName = $currentUser.UserPrincipalName
+                            UserDisplayName   = $currentUser.DisplayName
+                            UserMailNickName  = $currentUser.MailNickName
+                            Status            = 'OwnerAssignFailed'
+                            Message           = $ownerMessage
+                        }
+                    }
                 }
 
-                [pscustomobject][ordered]@{
-                    TeamId            = $teamGroup.Id
-                    TeamDisplayName   = $teamGroup.DisplayName
-                    UserObjectId      = $currentUser.ObjectId
-                    UserPrincipalName = $currentUser.UserPrincipalName
-                    UserDisplayName   = $currentUser.DisplayName
-                    UserMailNickName  = $currentUser.MailNickName
-                    Status            = $status
-                    Message           = $message
-                }
+                continue
+            }
+
+            [pscustomobject][ordered]@{
+                TeamId            = $teamGroup.Id
+                TeamDisplayName   = $teamGroup.DisplayName
+                RequestedRole     = $Role
+                EffectiveRole     = 'Member'
+                UserObjectId      = $currentUser.ObjectId
+                UserPrincipalName = $currentUser.UserPrincipalName
+                UserDisplayName   = $currentUser.DisplayName
+                UserMailNickName  = $currentUser.MailNickName
+                Status            = $memberStatus
+                Message           = $memberMessage
             }
         }
     }

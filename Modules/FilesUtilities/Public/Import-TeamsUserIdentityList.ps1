@@ -7,8 +7,16 @@ function Import-TeamsUserIdentityList {
     Legge un file tabellare tramite Import-SpreadsheetSafe e individua la colonna
     contenente l'identificativo utente. Supporta UPN, ObjectId o MailNickName.
 
+    Se presente una colonna ruolo denominata 'Ruolo' o 'Role', il valore viene
+    normalizzato ai ruoli supportati:
+    - Owner
+    - Member
+
+    Se la colonna non è presente, è vuota o contiene un valore non riconosciuto,
+    il ruolo restituito sarà 'Member'.
+
     Restituisce oggetti con:
-    RowNumber, SourceIdentity, SourceIdentityType.
+    RowNumber, SourceIdentity, SourceIdentityType, RequestedRole.
 
     .PARAMETER Path
     Percorso del file di input.
@@ -21,12 +29,6 @@ function Import-TeamsUserIdentityList {
 
     .OUTPUTS
     PSCustomObject
-
-    .EXAMPLE
-    Import-TeamsUserIdentityList -Path 'C:\Temp\users.xlsx'
-
-    .EXAMPLE
-    Import-TeamsUserIdentityList -Path 'C:\Temp\users.csv' -IdentityColumn 'UserPrincipalName'
     #>
     [CmdletBinding()]
     param(
@@ -38,16 +40,68 @@ function Import-TeamsUserIdentityList {
         [string] $WorksheetName,
 
         [Parameter()]
-        [string] $IdentityColumn
+        [string] $IdentityColumn,
+
+        [Parameter()]
+        [char] $Delimiter
     )
 
-    $rows = Import-SpreadsheetSafe -Path $Path -WorksheetName $WorksheetName
+    function Get-AutoDetectedDelimiter {
+        param(
+            [Parameter(Mandatory)]
+            [string] $CsvPath
+        )
+
+        $firstLine = Get-Content -Path $CsvPath -TotalCount 1
+        if ([string]::IsNullOrWhiteSpace($firstLine)) {
+            return ','
+        }
+
+        $semicolonCount = ([regex]::Matches($firstLine, ';')).Count
+        $commaCount     = ([regex]::Matches($firstLine, ',')).Count
+        $tabCount       = ([regex]::Matches($firstLine, "`t")).Count
+
+        if ($semicolonCount -ge $commaCount -and $semicolonCount -ge $tabCount -and $semicolonCount -gt 0) {
+            return ';'
+        }
+
+        if ($tabCount -ge $commaCount -and $tabCount -gt 0) {
+            return "`t"
+        }
+
+        return ','
+    }
+
+    $effectiveDelimiter = $Delimiter
+    $extension = ConvertTo-NormalizedExt ([IO.Path]::GetExtension($Path))
+
+    if (-not $PSBoundParameters.ContainsKey('Delimiter') -and $extension -eq 'csv') {
+        $effectiveDelimiter = Get-AutoDetectedDelimiter -CsvPath $Path
+    }
+
+    $importParams = @{
+        Path = $Path
+    }
+
+    if ($WorksheetName) {
+        $importParams['WorksheetName'] = $WorksheetName
+    }
+
+    if ($extension -eq 'csv' -and $effectiveDelimiter) {
+        $importParams['Delimiter'] = $effectiveDelimiter
+    }
+
+    $rows = Import-SpreadsheetSafe @importParams
     if (-not $rows) {
         return @()
     }
 
     $candidateColumns = @(
         'UserPrincipalName', 'UPN', 'ObjectId', 'Id', 'MailNickName', 'MailNickname', 'Identity', 'User'
+    )
+
+    $roleCandidateColumns = @(
+        'Ruolo', 'Role'
     )
 
     if (-not $IdentityColumn) {
@@ -59,6 +113,35 @@ function Import-TeamsUserIdentityList {
 
         if (-not $IdentityColumn) {
             throw "Nessuna colonna identità riconosciuta. Colonne disponibili: $($availableColumns -join ', ')"
+        }
+    }
+
+    $availableColumns = @($rows[0].PSObject.Properties.Name)
+
+    $roleColumn = $roleCandidateColumns |
+        Where-Object { $_ -in $availableColumns } |
+        Select-Object -First 1
+
+    function Resolve-RequestedRole {
+        param(
+            [AllowNull()]
+            [string] $Value
+        )
+
+        if ([string]::IsNullOrWhiteSpace($Value)) {
+            return 'Member'
+        }
+
+        switch ($Value.Trim().ToLowerInvariant()) {
+            'owner'         { 'Owner'; break }
+            'owners'        { 'Owner'; break }
+            'proprietario'  { 'Owner'; break }
+            'proprietari'   { 'Owner'; break }
+            'member'        { 'Member'; break }
+            'members'       { 'Member'; break }
+            'membro'        { 'Member'; break }
+            'membri'        { 'Member'; break }
+            default         { 'Member' }
         }
     }
 
@@ -84,10 +167,18 @@ function Import-TeamsUserIdentityList {
             'MailNickName'
         }
 
+        $requestedRole = if ($roleColumn) {
+            Resolve-RequestedRole -Value ([string] $row.$roleColumn)
+        }
+        else {
+            'Member'
+        }
+
         [pscustomobject][ordered]@{
             RowNumber          = $rowNumber
             SourceIdentity     = $value
             SourceIdentityType = $identityType
+            RequestedRole      = $requestedRole
         }
     }
 }

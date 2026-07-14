@@ -129,9 +129,17 @@ foreach ($identityRow in $identityRows) {
         continue
     }
 
+    $requestedRole = if ($identityRow.PSObject.Properties['RequestedRole']) {
+        $identityRow.RequestedRole
+    }
+    else {
+        'Member'
+    }
+
     $addResults = @(
         $resolvedUser | Add-TeamGroupMemberSafe `
             -TeamId $TeamId `
+            -Role $requestedRole `
             -TenantId $TenantId `
             -UseDeviceCode:$UseDeviceCode `
             -AutoInstallModules:$AutoInstallModules `
@@ -145,6 +153,8 @@ foreach ($identityRow in $identityRows) {
                 RowNumber          = $identityRow.RowNumber
                 SourceIdentity     = $identityRow.SourceIdentity
                 SourceIdentityType = $identityRow.SourceIdentityType
+                RequestedRole      = $requestedRole
+                EffectiveRole      = $result.EffectiveRole
                 TeamId             = $result.TeamId
                 TeamDisplayName    = $result.TeamDisplayName
                 UserObjectId       = $result.UserObjectId
@@ -165,11 +175,11 @@ $exportInfo = $results |
         -Force
 
 $successCount = @(
-    $results | Where-Object { $_.Status -in @('Added', 'AlreadyMember') }
+    $results | Where-Object { $_.Status -in @('Added') }
 ).Count
 
 $errorCount = @(
-    $results | Where-Object { $_.Status -notin @('Added', 'AlreadyMember') }
+    $results | Where-Object { $_.Status -notin @('Added') }
 ).Count
 
 Write-Host ("Operazioni completate. Riuscite: {0}. Errori: {1}. Report: {2}" -f $successCount, $errorCount, $exportInfo.Path)
