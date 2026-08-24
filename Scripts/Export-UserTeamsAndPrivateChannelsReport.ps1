@@ -20,6 +20,9 @@ param(
     [string] $OutputPath,
 
     [Parameter()]
+    [string] $SelectedModule,
+
+    [Parameter()]
     [switch] $UseConsole,
 
     [Parameter()]
@@ -95,6 +98,26 @@ begin {
 }
 
 process {
+    if (-not $SelectedModule) {
+        Write-Host ""
+        Write-Host "============================================" -ForegroundColor Cyan
+        Write-Host " Export User Teams and Private Channels Report" -ForegroundColor Cyan
+        Write-Host "============================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Seleziona modulo da utilizzare:"
+        Write-Host "1 - Only Microsoft Graph Module"
+        Write-Host "2 - Both Microsoft Graph and Microsoft Teams Module"
+        Write-Host ""
+
+        $moduleChoice = Read-Host "Inserisci la scelta (1 o 2)"
+
+        switch ($moduleChoice) {
+            '1' { $SelectedModule = 'Microsoft.Graph' }
+            '2' { $SelectedModule = 'MicrosoftTeams' }
+            default { throw "Scelta non valida. Inserire 1 oppure 2." }
+        }
+    }
+
     if (-not $InputPath) {
         $InputPath = Get-InputFile `
             -Formats @('csv', 'xlsx') `
@@ -161,11 +184,13 @@ process {
         $validUsers |
             Get-UserTeamsMembershipDetail `
                 -TenantId $TenantId `
+                -SelectedModule $SelectedModule `
                 -UseDeviceCode:$UseDeviceCode `
                 -AutoInstallModules:$AutoInstallModules `
                 -ForceReconnect:$ForceReconnect `
                 -Verbose:$VerbosePreference
     )
+    
 
     if (-not $teamMemberships) {
         Write-Warning "Nessun Team trovato per gli utenti specificati."
@@ -182,6 +207,7 @@ process {
 
         $privateChannelParams = @{
             TenantId            = $TenantId
+            SelectedModule      = $SelectedModule
             UseDeviceCode       = $UseDeviceCode
             AutoInstallModules  = $AutoInstallModules
             ForceReconnect      = $ForceReconnect

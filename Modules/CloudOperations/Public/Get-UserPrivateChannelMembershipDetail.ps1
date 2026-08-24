@@ -57,6 +57,10 @@ function Get-UserPrivateChannelMembershipDetail {
         [string] $TenantId,
 
         [Parameter()]
+        [ValidateSet('Microsoft.Graph', 'MicrosoftTeams')]
+        [string] $SelectedModule = 'Microsoft.Graph',
+
+        [Parameter()]
         [switch] $UseDeviceCode,
 
         [Parameter()]
@@ -70,31 +74,47 @@ function Get-UserPrivateChannelMembershipDetail {
     )
 
     begin {
-        Write-Verbose "Connessione a Microsoft Graph..."
-        Connect-ToGraph `
-            -Scopes @('Group.Read.All', 'Channel.ReadBasic.All', 'ChannelMember.Read.All', 'User.Read.All') `
-            -TenantId $TenantId `
-            -UseDeviceCode:$UseDeviceCode `
-            -ForceReconnect:$ForceReconnect `
-            -AutoInstallModules:$AutoInstallModules `
-            -Verbose:$VerbosePreference
+        switch ($SelectedModule) {
+            'Microsoft.Graph' {
+                Write-Verbose "Connessione a Microsoft Graph..."
+                Connect-ToGraph `
+                    -Scopes @('Group.Read.All', 'Channel.ReadBasic.All', 'ChannelMember.Read.All', 'User.Read.All') `
+                    -TenantId $TenantId `
+                    -UseDeviceCode:$UseDeviceCode `
+                    -ForceReconnect:$ForceReconnect `
+                    -AutoInstallModules:$AutoInstallModules `
+                    -Verbose:$VerbosePreference
 
-        $requiredModules = @(
-            'Microsoft.Graph.Teams'
-        )
+                $requiredModules = @(
+                'Microsoft.Graph.Teams'
+            )
 
-        foreach ($module in $requiredModules) {
-            if (-not (Get-Module -ListAvailable -Name $module)) {
-                if ($AutoInstallModules) {
-                    Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            foreach ($module in $requiredModules) {
+                if (-not (Get-Module -ListAvailable -Name $module)) {
+                    if ($AutoInstallModules) {
+                        Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                    }
+                    else {
+                        throw "Modulo richiesto non trovato: $module"
+                    }
                 }
-                else {
-                    throw "Modulo richiesto non trovato: $module"
+
+                if (-not (Get-Module -Name $module)) {
+                    Import-Module $module -ErrorAction Stop -Verbose:$false | Out-Null
                 }
             }
-
-            if (-not (Get-Module -Name $module)) {
-                Import-Module $module -ErrorAction Stop -Verbose:$false | Out-Null
+        }
+            'MicrosoftTeams' {
+                Write-Verbose "Connessione a Microsoft Teams..."
+                Connect-ToMicrosoftTeams `
+                    -TenantId $TenantId `
+                    -UseDeviceCode:$UseDeviceCode `
+                    -ForceReconnect:$ForceReconnect `
+                    -AutoInstallModules:$AutoInstallModules `
+                    -Verbose:$VerbosePreference
+            }
+            default {
+                throw "Modulo selezionato non valido: '$SelectedModule'. Moduli validi: $SelectedModule.ValidSet -join ', '."
             }
         }
     }
@@ -110,16 +130,34 @@ function Get-UserPrivateChannelMembershipDetail {
                 continue
             }
 
-            if ([string]::IsNullOrWhiteSpace($row.UserObjectId)) {
-                Write-Warning "UserObjectId mancante per il Team '$($row.TeamDisplayName)'."
-                continue
+            switch ($SelectedModule) {
+                'Microsoft.Graph' {
+                        if ([string]::IsNullOrWhiteSpace($row.UserObjectId)) {
+                        Write-Warning "ObjectId mancante per l'utente '$($row.UserPrincipalName)'."
+                        continue
+                    }
+                }
+                'MicrosoftTeams' {
+                    if ([string]::IsNullOrWhiteSpace($row.UserPrincipalName)) {
+                        Write-Warning "UserPrincipalName mancante per l'utente '$($row.UserDisplayName)'."
+                        continue
+                    }
+                }
             }
 
             Write-Verbose "Recupero canali privati del Team '$($row.TeamDisplayName)' per '$($row.UserPrincipalName)'..."
 
             try {
-                $channels = @(Get-MgTeamChannel -TeamId $row.TeamId -All -ErrorAction Stop |
-                    Where-Object { $_.MembershipType -eq 'private' })
+                switch($SelectedModule) {
+                    'Microsoft.Graph' {
+                        $channels = @(Get-MgTeamChannel -TeamId $row.TeamId -All -ErrorAction Stop |
+                            Where-Object { $_.MembershipType -eq 'private' })
+                    }
+                    'MicrosoftTeams' {
+                        $channels = @(Get-TeamChannel -GroupId $row.TeamId -ErrorAction Stop |
+                            Where-Object { $_.MembershipType -eq 'Private' })
+                    }
+                }
             }
             catch {
                 Write-Warning "Impossibile leggere i canali del Team '$($row.TeamDisplayName)': $($_.Exception.Message)"
@@ -130,19 +168,39 @@ function Get-UserPrivateChannelMembershipDetail {
 
             foreach ($channel in $channels) {
                 try {
-                    $channelMembers = @(Get-MgTeamChannelMember -TeamId $row.TeamId -ChannelId $channel.Id -All -ErrorAction Stop)
+                    switch($SelectedModule) {
+                        'Microsoft.Graph' {
+                            $channelMembers = @(Get-MgTeamChannelMember -TeamId $row.TeamId -ChannelId $channel.Id -All -ErrorAction Stop)
 
-                    $channelMembership = $channelMembers |
-                        Where-Object {
-                            $_.UserId -eq $row.UserObjectId
-                        } |
-                        Select-Object -First 1
+                            $channelMembership = $channelMembers |
+                                Where-Object {
+                                    $_.UserId -eq $row.UserObjectId
+                                } |
+                                Select-Object -First 1
+                        }
+                        'MicrosoftTeams' {
+                            $channelMembers = @(Get-TeamChannelUser -GroupId $row.TeamId -DisplayName $channel.DisplayName -ErrorAction Stop)
+
+                            $channelMembership = $channelMembers |
+                                Where-Object {
+                                    $_.User -eq $row.UserPrincipalName
+                                } |
+                                Select-Object -First 1
+                        }
+                    }
 
                     if ($null -eq $channelMembership) {
                         continue
                     }
 
-                    $channelRole = if ($channelMembership.Roles -contains 'owner') { 'Owner' } else { 'Member' }
+                    switch ($SelectedModule) {
+                        'Microsoft.Graph' {
+                            $channelRole = if ($channelMembership.Roles -contains 'owner') { 'Owner' } else { 'Member' }
+                        }
+                        'MicrosoftTeams' {
+                            $channelRole = if ($channelMembership.Roles -contains 'Owner') { 'Owner' } else { 'Member' }
+                        }
+                    }
 
                     $outputCount++
 
