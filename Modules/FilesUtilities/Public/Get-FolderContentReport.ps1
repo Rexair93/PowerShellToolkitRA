@@ -74,17 +74,22 @@ function Get-FolderContentReport {
         [string[]] $MediaTagNames = @(
             'Titolo',
             'Artisti partecipanti',
-            'Album',
-            'Genere',
             'Durata',
-            'Anno',
-            'Numero traccia',
-            'Bitrate'
+            'Anno'
         ),
 
-        [hashtable] $CustomMediaTags,
+        [hashtable] $CustomMediaTags = @{
+            Title = 'ItemList:Title'
+            Publisher = 'ItemList:Publisher'
+            Artist = 'ItemList:Artist'
+            Director = 'ItemList:Director'
+            Studio = 'iTunes:STUDIO'
+            Site = 'iTunes:SITE'
+            ReleaseTime = 'iTunes:RELEASETIME'
+            Distributor = 'iTunes:DISTRIBUTOR'
+        },
 
-        [string] $ExifToolPath
+        [string] $ExifToolPath = 'C:\exiftool\exiftool.exe'
     )
 
     begin {

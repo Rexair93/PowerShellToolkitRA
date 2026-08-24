@@ -41,7 +41,7 @@ function Get-FileMediaTagMap {
         [Alias('FullName', 'Path')]
         [string] $FilePath,
 
-        [string] $ExifToolPath,
+        [string] $ExifToolPath = 'C:\exiftool\exiftool.exe',
 
         [switch] $IncludeEmpty,
 
