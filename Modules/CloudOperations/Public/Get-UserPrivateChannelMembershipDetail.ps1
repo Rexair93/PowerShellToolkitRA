@@ -28,9 +28,8 @@ function Get-UserPrivateChannelMembershipDetail {
     .PARAMETER ForceReconnect
     Forza una nuova connessione a Microsoft Graph.
 
-    .PARAMETER IncludeTeamsWithoutPrivateChannels
-    Se specificato, restituisce una riga anche per i Team in cui l'utente non appartiene
-    ad alcun canale privato.
+    .PARAMETER ExcludeTeamsWithoutPrivateChannels
+    Se specificato, esclude i Team in cui l'utente non appartiene ad alcun canale privato.
 
     .OUTPUTS
     PSCustomObject con:
@@ -44,7 +43,7 @@ function Get-UserPrivateChannelMembershipDetail {
     .EXAMPLE
     $users |
         Get-UserTeamsMembershipDetail -TenantId $TenantId |
-        Get-UserPrivateChannelMembershipDetail -TenantId $TenantId -IncludeTeamsWithoutPrivateChannels
+        Get-UserPrivateChannelMembershipDetail -TenantId $TenantId
     #>
     [CmdletBinding()]
     param(
@@ -70,7 +69,7 @@ function Get-UserPrivateChannelMembershipDetail {
         [switch] $ForceReconnect,
 
         [Parameter()]
-        [switch] $IncludeTeamsWithoutPrivateChannels
+        [switch] $ExcludeTeamsWithoutPrivateChannels
     )
 
     begin {
@@ -183,7 +182,8 @@ function Get-UserPrivateChannelMembershipDetail {
 
                             $channelMembership = $channelMembers |
                                 Where-Object {
-                                    $_.User -eq $row.UserPrincipalName
+                                    ($_.UserId -and $_.UserId -eq $row.UserObjectId) -or
+                                    ($_.User -and $_.User -ieq $row.UserPrincipalName)
                                 } |
                                 Select-Object -First 1
                         }
@@ -198,7 +198,7 @@ function Get-UserPrivateChannelMembershipDetail {
                             $channelRole = if ($channelMembership.Roles -contains 'owner') { 'Owner' } else { 'Member' }
                         }
                         'MicrosoftTeams' {
-                            $channelRole = if ($channelMembership.Roles -contains 'Owner') { 'Owner' } else { 'Member' }
+                            $channelRole = if (([string] $channelMembership.Role).Trim() -ieq 'Owner') { 'Owner' } else { 'Member' }
                         }
                     }
 
@@ -225,7 +225,7 @@ function Get-UserPrivateChannelMembershipDetail {
                 }
             }
 
-            if ($IncludeTeamsWithoutPrivateChannels -and $outputCount -eq 0) {
+            if (-not $ExcludeTeamsWithoutPrivateChannels -and $outputCount -eq 0) {
                 [pscustomobject][ordered]@{
                     SourceIdentity         = $row.SourceIdentity
                     SourceIdentityType     = $row.SourceIdentityType

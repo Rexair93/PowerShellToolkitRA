@@ -38,7 +38,7 @@ param(
     [switch] $ForceReconnect,
 
     [Parameter()]
-    [switch] $IncludeTeamsWithoutPrivateChannels
+    [switch] $ExcludeTeamsWithoutPrivateChannels
 )
 
 begin {
@@ -195,12 +195,7 @@ process {
     if (-not $teamMemberships) {
         Write-Warning "Nessun Team trovato per gli utenti specificati."
 
-        if ($IncludeTeamsWithoutPrivateChannels) {
-            $results = @()
-        }
-        else {
-            $results = @()
-        }
+        $results = @()
     }
     else {
         Write-Verbose "Relazioni utente-Team trovate: $($teamMemberships.Count)."
@@ -214,8 +209,8 @@ process {
             Verbose             = ($VerbosePreference -ne 'SilentlyContinue')
         }
 
-        if ($IncludeTeamsWithoutPrivateChannels) {
-            $privateChannelParams['IncludeTeamsWithoutPrivateChannels'] = $true
+        if ($ExcludeTeamsWithoutPrivateChannels) {
+            $privateChannelParams['ExcludeTeamsWithoutPrivateChannels'] = $true
         }
 
         $results = @(

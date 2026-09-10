@@ -155,7 +155,6 @@ function Get-UserTeamsMembershipDetail {
             }
 
             foreach ($team in $joinedTeams) {
-                $teamRole = 'Member'
 
                 try {
                     switch($SelectedModule) {
@@ -165,12 +164,30 @@ function Get-UserTeamsMembershipDetail {
                         }
                         'MicrosoftTeams' {
                             $teamMembers = @(Get-TeamUser -GroupId $team.GroupId -ErrorAction Stop)
-                            $teamMembership = $teamMembers | Where-Object { $_.User -eq $currentUser.UserPrincipalName } | Select-Object -First 1
+                            $teamMembership = $teamMembers |
+                                Where-Object {
+                                    ($_.UserId -and $_.UserId -eq $currentUser.ObjectId) -or
+                                    ($_.User -and $_.User -ieq $currentUser.UserPrincipalName)
+                                } |
+                                Select-Object -First 1
                         }
                     }
 
-                    if ($teamMembership -and $teamMembership.Roles -contains 'owner') {
-                        $teamRole = 'Owner'
+                    switch ($SelectedModule) {
+                        'Microsoft.Graph' {
+                            if ($teamMembership -and $teamMembership.Roles -contains 'owner') {
+                                $teamRole = 'Owner'
+                            } else {
+                                $teamRole = 'Member'
+                            }
+                        }
+                        'MicrosoftTeams' {
+                            if ($teamMembership -and ([string] $teamMembership.Role).Trim() -ieq 'Owner') {
+                                $teamRole = 'Owner'
+                            } else {
+                                $teamRole = 'Member'
+                            }
+                        }
                     }
                 }
                 catch {
