@@ -85,9 +85,9 @@ function Get-FolderContentReport {
             Director = 'ItemList:Director'
             Studio = 'iTunes:STUDIO'
             Site = 'iTunes:SITE'
-            ReleaseTime = 'iTunes:RELEASETIME'
+            ReleaseDate = 'iTunes:RELEASEDATE'
             Distributor = 'iTunes:DISTRIBUTOR'
-            Description = 'iTunes:DESCRIPTION'
+            Description = 'ItemList:Description'
         },
 
         [string] $ExifToolPath = 'C:\exiftool\exiftool.exe'
@@ -563,6 +563,20 @@ function Get-FolderContentReport {
                 if ($resolvedCustomTagMap.Count -gt 0) {
                     $selectedProperties += @($resolvedCustomTagMap.Keys)
                 }
+
+                $selectedProperties = @(
+                    foreach ($propertyName in $selectedProperties) {
+                        if ($propertyName -eq 'Size[MB]') {
+                            @{
+                                Name       = 'Size[MB]'
+                                Expression = { $_.'Size[MB]' }
+                            }
+                        }
+                        else {
+                            $propertyName
+                        }
+                    }
+                )
 
                 $results.Add(($item | Select-Object -Property $selectedProperties))
             }
