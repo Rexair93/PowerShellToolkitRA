@@ -106,6 +106,10 @@ function Resolve-OutputTarget {
 
     $pathExt = Get-FileExtensionSafe -Path $OutputPath
     if ($pathExt) {
+        if ($pathExt -notin $allowedFormats) {
+            throw "Formato di output non supportato: '.$pathExt'. Formati ammessi: $($allowedFormats -join ', ')."
+        }
+
         return [pscustomobject]@{
             Path   = $OutputPath
             Format = $pathExt
@@ -192,13 +196,31 @@ $destination = Resolve-OutputTarget -OutputPath $OutputPath -OutputFileName $Out
 $outputFile = $destination.Path
 $outputFormat = $destination.Format
 
-$buffer = [System.Collections.Generic.List[object]]::new()
-if (Test-Path $outputFile -PathType Leaf) {
-    $existing = Import-SpreadsheetSafe -Path $outputFile -Delimiter $Delimiter
-    foreach ($r in $existing) {
-        [void]$buffer.Add($r)
+# Mantiene l'ordine di inserimento e consente di aggiungere duplicati con una chiave interna unica.
+$recordBuffer = [ordered]@{}
+
+try {
+    if (Test-Path $outputFile -PathType Leaf) {
+        $existingRecords = Import-SpreadsheetSafe -Path $outputFile -Delimiter $Delimiter
+        foreach ($r in $existingRecords) {
+            $fullName = if ($r.PSObject.Properties['FullName']) { [string]$r.FullName } else { $null }
+            $fullName = $fullName.Trim()
+            if ([string]::IsNullOrWhiteSpace($fullName)) { continue }
+
+            $recordKey = $fullName
+            $suffix = 2
+            while ($recordBuffer.Contains($recordKey)) {
+                $recordKey = '{0} ({1})' -f $fullName, $suffix
+                $suffix++
+            }
+
+            $recordBuffer[$recordKey] = $r
+        }
+        Write-Host "File esistente caricato: $outputFile ($($recordBuffer.Count) record unici, formato: $outputFormat)" -ForegroundColor Cyan
     }
-    Write-Host "File esistente caricato: $outputFile ($($buffer.Count) record, formato: $outputFormat)"
+} catch {
+    Write-Error "Errore durante il caricamento del file di output esistente '$outputFile': $($_.Exception.Message)"
+    # Continui l'esecuzione anche se non ci sono dati preesistenti, ma lo avvisa.
 }
 
 $found = Find-InCsv -CsvRootPath $InputPath -SearchValue $SearchValue -Recurse:$Recurse -IncludeSearchTerm -Delimiter $Delimiter
@@ -208,62 +230,89 @@ if (-not $found) {
 }
 
 foreach ($match in $found) {
-    Write-Host "`n--- Record trovato in: $($match._SourceFile) ---"
+    Write-Host "`n--- Record trovato in: $($match._SourceFile) ---" -ForegroundColor Green
     $match | Format-List
 
     $confirm = Read-ChoiceValue -Prompt 'Aggiungere questo record? (yes/no)' -AllowedValues @('yes', 'y', 'no', 'n') -Default 'no'
     if ($confirm -notin @('yes', 'y')) {
+        Write-Host "Record saltato per scelta utente."
         continue
     }
 
     $ranking = Read-RankingValue
 
-    $ordered = [ordered]@{}
-    $ordered['SourceFile'] = $match._SourceFile
-    $ordered['Ranking'] = $ranking
-
-    foreach ($prop in $match.PSObject.Properties) {
-        if ($prop.Name -in '_SourceFile', '_SourcePath', '_SearchTerm') {
-            continue
-        }
-        $ordered[$prop.Name] = $prop.Value
+    $orderedRecord = [ordered]@{
+        SourceFile = $match._SourceFile
+        Ranking    = $ranking
     }
 
-    $newRecord = [pscustomobject]$ordered
+    foreach ($property in $match.PSObject.Properties) {
+        if ($property.Name -in @('_SourceFile', '_SourcePath', '_SearchTerm', 'SourceFile', 'Ranking')) {
+            continue
+        }
+
+        $orderedRecord[$property.Name] = $property.Value
+    }
+
+    $newRecord = [pscustomobject]$orderedRecord
+
     $fullName = if ($newRecord.PSObject.Properties['FullName']) { [string]$newRecord.FullName } else { $null }
+    $fullName = if ($fullName) { $fullName.Trim() } else { $null }
 
-    if (-not [string]::IsNullOrWhiteSpace($fullName)) {
-        $dupIdx = @(for ($i = 0; $i -lt $buffer.Count; $i++) {
-                $existing = $buffer[$i]
-                $fp = $existing.PSObject.Properties['FullName']
-                if ($fp -and [string]$fp.Value -eq $fullName) { $i }
-            })
+    if ([string]::IsNullOrWhiteSpace($fullName)) {
+        Write-Warning "Il record non contiene un FullName valido, viene saltato."
+        continue
+    }
 
-        if ($dupIdx.Count -gt 0) {
-            $action = Read-DuplicateAction -FullName $fullName -UseConsole:$UseConsole
-            switch ($action) {
-                'skip' {
-                    Write-Host 'Record saltato.'
-                    continue
+    if ($recordBuffer.Contains($fullName)) {
+        Write-Host "Duplicato rilevato: FullName '$fullName'." -ForegroundColor Yellow
+
+        $action = Read-DuplicateAction -FullName $fullName -UseConsole:$UseConsole
+        switch ($action) {
+            'skip' {
+                Write-Host 'Record saltato.' -ForegroundColor Gray
+                continue
+            }
+            'overwrite' {
+                $recordBuffer[$fullName] = $newRecord
+                Write-Host "Record sovrascritto." -ForegroundColor Green
+                continue
+            }
+            'duplicate' {
+                $recordKey = $fullName
+                $suffix = 2
+                while ($recordBuffer.Contains($recordKey)) {
+                    $recordKey = '{0} ({1})' -f $fullName, $suffix
+                    $suffix++
                 }
-                'overwrite' {
-                    foreach ($idx in ($dupIdx | Sort-Object -Descending)) {
-                        $buffer.RemoveAt($idx)
-                    }
-                }
+
+                $recordBuffer[$recordKey] = $newRecord
+                Write-Host "Record duplicato aggiunto." -ForegroundColor Green
+                continue
             }
         }
     }
 
-    [void]$buffer.Add($newRecord)
+    $recordBuffer[$fullName] = $newRecord
+    Write-Host "Nuovo record aggiunto." -ForegroundColor Green
 }
 
-if ($buffer.Count -eq 0) {
-    Write-Host 'Nessun record da esportare.'
+if ($recordBuffer.Count -eq 0) {
+    Write-Host 'Nessun record da esportare.' -ForegroundColor Yellow
     return
 }
 
+# Convertire l'Hashtable dei record in un array per l'esportazione
+$finalRecords = $recordBuffer.Values
+
 if ($PSCmdlet.ShouldProcess($outputFile, 'Esportazione bestOf')) {
-    $result = Export-Results -InputObject $buffer.ToArray() -Path $outputFile -WorksheetName 'bestOf' -Force
-    Write-Host "Esportazione completata: $($result.Path) [formato: $($result.Format)]"
+    try {
+        $result = Export-Results -InputObject $finalRecords -Path $outputFile -WorksheetName 'bestOf' -Force
+        Write-Host "==================================================" -ForegroundColor Cyan
+        Write-Host "Esportazione completata con successo: $($result.Path) [formato: $($result.Format)]" -ForegroundColor Green
+    } catch {
+        Write-Error "Errore durante l'esportazione dei risultati in '$outputFile': $($_.Exception.Message)"
+    }
+} else {
+    Write-Host 'Operazione di esportazione annullata.' -ForegroundColor Yellow
 }
