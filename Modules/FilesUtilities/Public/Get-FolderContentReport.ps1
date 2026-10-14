@@ -87,6 +87,7 @@ function Get-FolderContentReport {
             Site = 'iTunes:SITE'
             ReleaseTime = 'iTunes:RELEASETIME'
             Distributor = 'iTunes:DISTRIBUTOR'
+            Description = 'iTunes:DESCRIPTION'
         },
 
         [string] $ExifToolPath = 'C:\exiftool\exiftool.exe'
@@ -107,7 +108,8 @@ function Get-FolderContentReport {
 
         $baseProperties = @(
             'Name',
-            'Size [MB]',
+            'Size[MB]',
+            'VideoResolution',
             'Extension',
             'CreationTime',
             'LastAccessTime',
@@ -206,6 +208,14 @@ function Get-FolderContentReport {
                 }
                 '^duration$' {
                     $candidateNames += @('Durata', 'Lunghezza')
+                    break
+                }
+                '^framewidth$' {
+                    $candidateNames += @('Larghezza fotogramma', 'Larghezza video', 'Video width')
+                    break
+                }
+                '^frameheight$' {
+                    $candidateNames += @('Altezza fotogramma', 'Altezza video', 'Video height')
                     break
                 }
                 '^bitrate$' {
@@ -420,6 +430,9 @@ function Get-FolderContentReport {
                 $resolvedMediaTagMap[$tagName] = $tagName
             }
 
+            $resolvedMediaTagMap['__VideoWidth'] = 'Frame width'
+            $resolvedMediaTagMap['__VideoHeight'] = 'Frame height'
+
             if ($CustomMediaTags) {
                 foreach ($customKey in $CustomMediaTags.Keys) {
                     $outputName = [string] $customKey
@@ -487,12 +500,13 @@ function Get-FolderContentReport {
                 $itemData = [ordered]@{
                     SourceFolder   = $folderName
                     Name           = $entry.Name
-                    'Size [MB]'    = if ($entry.PSIsContainer -or $null -eq $entry.Length) {
+                    'Size[MB]'     = if ($entry.PSIsContainer -or $null -eq $entry.Length) {
                         $null
                     }
                     else {
                         [Math]::Round(($entry.Length / 1MB), 2)
                     }
+                    'VideoResolution' = $null
                     Extension      = $entry.Extension
                     CreationTime   = $entry.CreationTime
                     LastAccessTime = $entry.LastAccessTime
@@ -508,7 +522,15 @@ function Get-FolderContentReport {
                     $shellTagValues = Get-ShellMediaTagValues -File $entry -RequestedTags $resolvedMediaTagMap -ShellObject $shell -FolderCache $shellFolderCache
 
                     foreach ($tagName in $resolvedMediaTagMap.Keys) {
-                        $itemData[$tagName] = $shellTagValues[$tagName]
+                        if (-not $tagName.StartsWith('__')) {
+                            $itemData[$tagName] = $shellTagValues[$tagName]
+                        }
+                    }
+
+                    $widthMatch = [regex]::Match([string] $shellTagValues['__VideoWidth'], '\d+')
+                    $heightMatch = [regex]::Match([string] $shellTagValues['__VideoHeight'], '\d+')
+                    if ($widthMatch.Success -and $heightMatch.Success) {
+                        $itemData['VideoResolution'] = '{0}x{1}' -f $widthMatch.Value, $heightMatch.Value
                     }
 
                     if ($canUseExifToolForCustomTags) {
@@ -535,7 +557,7 @@ function Get-FolderContentReport {
                 }
 
                 if ($IncludeMediaTags -and $resolvedMediaTagMap.Count -gt 0) {
-                    $selectedProperties += @($resolvedMediaTagMap.Keys)
+                    $selectedProperties += @($resolvedMediaTagMap.Keys | Where-Object { -not $_.StartsWith('__') })
                 }
 
                 if ($resolvedCustomTagMap.Count -gt 0) {
